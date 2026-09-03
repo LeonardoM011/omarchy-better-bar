@@ -46,13 +46,23 @@ Item {
     position: "top",
     transparent: false,
     centerAnchor: "omarchy.clock",
-    layout: { left: [], center: [], right: [] }
+    layout: { left: [], center: [], right: [] },
+    island: true,
+    islandGap: 6,
+    islandPadding: 10,
+    islandRadius: -1
   })
   property var layoutConfig: fallbackBarConfig.layout
   property string centerAnchor: ""
   property bool requestedTransparent: false
   property bool useTransparentForeground: false
   property bool transparent: false
+  // Island-bar customization (leonardom011.bar fork): each bar section paints
+  // its own pill-shaped slab instead of one continuous bar background.
+  property bool island: true
+  property int islandGap: 6
+  property int islandPadding: 10
+  property int islandRadius: -1
   property bool centerSectionHovered: false
   // One bar surface exists per monitor and each reports into this count, so a
   // pointer crossing from one monitor's bar to another's stays counted however
@@ -555,6 +565,23 @@ Item {
   readonly property bool vertical: position === "left" || position === "right"
   readonly property int barSize: vertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
 
+  // Island-bar derived geometry (leonardom011.bar fork).
+  readonly property int islandGapPx: island ? Style.space(islandGap) : 0
+  readonly property int islandPadPx: Style.space(islandPadding)
+  readonly property int barThickness: barSize + islandGapPx
+  // Margin for the flanking module lists. In island mode the slab is drawn
+  // islandPadPx *outside* the module list, so the list has to sit that much
+  // further in for the slab's outer edge to land on islandGapPx — the same
+  // inset as the gap to the screen edge, keeping the islands evenly framed.
+  readonly property int islandEdgeMargin: island ? islandGapPx + islandPadPx : Style.space(8)
+  readonly property color islandBackground: transparent
+    ? Qt.rgba(background.r, background.g, background.b, background.a * 0.45)
+    : background
+
+  function islandRadiusFor(w, h) {
+    return islandRadius >= 0 ? Style.space(islandRadius) : Math.min(w, h) / 2
+  }
+
   function normalizePosition(value) {
     return BarModel.normalizePosition(value)
   }
@@ -584,6 +611,13 @@ Item {
     position = normalizePosition(config.position)
     setRequestedTransparency(config.transparent === true)
     centerAnchor = Util.canonicalWidgetId(config.centerAnchor || "")
+
+    // Island-bar options (leonardom011.bar fork). Any of these may be absent
+    // from shell.json, so fall back to the same defaults as fallbackBarConfig.
+    island = config.island !== undefined ? config.island === true : true
+    islandGap = Number.isFinite(config.islandGap) ? config.islandGap : 6
+    islandPadding = Number.isFinite(config.islandPadding) ? config.islandPadding : 10
+    islandRadius = Number.isFinite(config.islandRadius) ? config.islandRadius : -1
 
     // layoutEntries feeds plain JS arrays to the module Repeaters, and QML
     // cannot diff those: reassigning layoutConfig rebuilds every widget on
@@ -1248,10 +1282,10 @@ Item {
     }
 
     margins {
-      top: root.barHidden && root.position === "top" ? -root.barSize : 0
-      bottom: root.barHidden && root.position === "bottom" ? -root.barSize : 0
-      left: root.barHidden && root.position === "left" ? -root.barSize : 0
-      right: root.barHidden && root.position === "right" ? -root.barSize : 0
+      top: root.barHidden && root.position === "top" ? -root.barThickness : 0
+      bottom: root.barHidden && root.position === "bottom" ? -root.barThickness : 0
+      left: root.barHidden && root.position === "left" ? -root.barThickness : 0
+      right: root.barHidden && root.position === "right" ? -root.barThickness : 0
     }
 
     anchors {
@@ -1261,9 +1295,11 @@ Item {
       right: root.position === "right" || !root.vertical
     }
 
-    implicitWidth: root.vertical ? root.barSize : 0
-    implicitHeight: root.vertical ? 0 : root.barSize
-    color: root.transparent ? "transparent" : root.background
+    implicitWidth: root.vertical ? root.barThickness : 0
+    implicitHeight: root.vertical ? 0 : root.barThickness
+    // Island slabs paint their own background; the window itself stays
+    // transparent so the gap and inter-island strip show the desktop.
+    color: (root.island || root.transparent) ? "transparent" : root.background
     surfaceFormat.opaque: false
     WlrLayershell.namespace: "omarchy-bar"
     WlrLayershell.layer: WlrLayer.Top
@@ -1353,18 +1389,62 @@ Item {
       Item {
         anchors.fill: parent
 
-        CenterModules { anchors.fill: parent }
-
-        LeftModules {
+        // Island band (leonardom011.bar fork): the panel itself grew by
+        // islandGapPx to reserve the gap; this inner band is the actual
+        // barSize-tall row the sections render into, offset away from the
+        // screen edge so the gap appears between the islands and the edge.
+        Item {
+          id: islandBand
           anchors.left: parent.left
-          anchors.leftMargin: Style.space(8)
-          anchors.verticalCenter: parent.verticalCenter
-        }
-
-        RightModules {
           anchors.right: parent.right
-          anchors.rightMargin: Style.space(8)
-          anchors.verticalCenter: parent.verticalCenter
+          height: root.barSize
+          y: root.position === "top" ? root.islandGapPx : 0
+
+          CenterModules { anchors.fill: parent }
+
+          LeftModules {
+            id: leftModules
+            anchors.left: parent.left
+            anchors.leftMargin: root.islandEdgeMargin
+            anchors.verticalCenter: parent.verticalCenter
+          }
+
+          RightModules {
+            id: rightModules
+            anchors.right: parent.right
+            anchors.rightMargin: root.islandEdgeMargin
+            anchors.verticalCenter: parent.verticalCenter
+          }
+
+          // Island slabs (leonardom011.bar fork): one pill background per
+          // flanking section, sized and positioned off the module row it
+          // sits behind. Animated so hover-reveal widgets (tray, indicators)
+          // don't make the slab snap.
+          Rectangle {
+            z: -1
+            visible: root.island && leftModules.visible && leftModules.width > 0
+            x: leftModules.x - root.islandPadPx
+            width: leftModules.width + root.islandPadPx * 2
+            height: root.barSize
+            anchors.verticalCenter: leftModules.verticalCenter
+            radius: root.islandRadiusFor(width, height)
+            color: root.islandBackground
+            Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+          }
+
+          Rectangle {
+            z: -1
+            visible: root.island && rightModules.visible && rightModules.width > 0
+            x: rightModules.x - root.islandPadPx
+            width: rightModules.width + root.islandPadPx * 2
+            height: root.barSize
+            anchors.verticalCenter: rightModules.verticalCenter
+            radius: root.islandRadiusFor(width, height)
+            color: root.islandBackground
+            Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+          }
         }
       }
     }
@@ -1375,18 +1455,54 @@ Item {
       Item {
         anchors.fill: parent
 
-        CenterModules { anchors.fill: parent }
-
-        LeftModules {
+        Item {
+          id: islandBand
           anchors.top: parent.top
-          anchors.topMargin: Style.space(8)
-          anchors.horizontalCenter: parent.horizontalCenter
-        }
-
-        RightModules {
           anchors.bottom: parent.bottom
-          anchors.bottomMargin: Style.space(8)
-          anchors.horizontalCenter: parent.horizontalCenter
+          width: root.barSize
+          x: root.position === "left" ? root.islandGapPx : 0
+
+          CenterModules { anchors.fill: parent }
+
+          LeftModules {
+            id: leftModules
+            anchors.top: parent.top
+            anchors.topMargin: root.islandEdgeMargin
+            anchors.horizontalCenter: parent.horizontalCenter
+          }
+
+          RightModules {
+            id: rightModules
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: root.islandEdgeMargin
+            anchors.horizontalCenter: parent.horizontalCenter
+          }
+
+          Rectangle {
+            z: -1
+            visible: root.island && leftModules.visible && leftModules.height > 0
+            y: leftModules.y - root.islandPadPx
+            height: leftModules.height + root.islandPadPx * 2
+            width: root.barSize
+            anchors.horizontalCenter: leftModules.horizontalCenter
+            radius: root.islandRadiusFor(width, height)
+            color: root.islandBackground
+            Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+          }
+
+          Rectangle {
+            z: -1
+            visible: root.island && rightModules.visible && rightModules.height > 0
+            y: rightModules.y - root.islandPadPx
+            height: rightModules.height + root.islandPadPx * 2
+            width: root.barSize
+            anchors.horizontalCenter: rightModules.horizontalCenter
+            radius: root.islandRadiusFor(width, height)
+            color: root.islandBackground
+            Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+          }
         }
       }
     }
@@ -1547,7 +1663,33 @@ Item {
       id: horizontalCenterModules
 
       Item {
+        id: hCenter
         anchors.fill: parent
+
+        // Island slab bounds (leonardom011.bar fork): span from the
+        // leftmost visible content edge to the rightmost. An empty flank's
+        // ModuleList collapses to zero width and its x lands exactly on the
+        // anchor's edge (anchored via anchors.right/left to the anchor
+        // module), so no special-casing is needed for the unanchored case.
+        readonly property real contentLeft: centerRoot.hasAnchor
+          ? Math.min(beforeList.x, centerAnchorModule.x)
+          : unanchoredList.x
+        readonly property real contentRight: centerRoot.hasAnchor
+          ? Math.max(afterList.x + afterList.width, centerAnchorModule.x + centerAnchorModule.width)
+          : unanchoredList.x + unanchoredList.width
+
+        Rectangle {
+          z: -1
+          visible: root.island && (hCenter.contentRight - hCenter.contentLeft) > 0
+          x: hCenter.contentLeft - root.islandPadPx
+          width: (hCenter.contentRight - hCenter.contentLeft) + root.islandPadPx * 2
+          height: root.barSize
+          anchors.verticalCenter: parent.verticalCenter
+          radius: root.islandRadiusFor(width, height)
+          color: root.islandBackground
+          Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+          Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        }
 
         CenterGestureArea { anchors.fill: parent }
 
@@ -1556,6 +1698,7 @@ Item {
         }
 
         ModuleList {
+          id: unanchoredList
           visible: !centerRoot.hasAnchor
           entries: centerRoot.entries
           region: "center"
@@ -1563,6 +1706,7 @@ Item {
         }
 
         ModuleList {
+          id: beforeList
           visible: centerRoot.hasAnchor
           entries: root.entriesBefore(centerRoot.entries, root.centerAnchor)
           region: "center"
@@ -1579,6 +1723,7 @@ Item {
         }
 
         ModuleList {
+          id: afterList
           visible: centerRoot.hasAnchor
           entries: root.entriesAfter(centerRoot.entries, root.centerAnchor)
           region: "center"
@@ -1592,7 +1737,28 @@ Item {
       id: verticalCenterModules
 
       Item {
+        id: vCenter
         anchors.fill: parent
+
+        readonly property real contentTop: centerRoot.hasAnchor
+          ? Math.min(beforeList.y, centerAnchorModule.y)
+          : unanchoredList.y
+        readonly property real contentBottom: centerRoot.hasAnchor
+          ? Math.max(afterList.y + afterList.height, centerAnchorModule.y + centerAnchorModule.height)
+          : unanchoredList.y + unanchoredList.height
+
+        Rectangle {
+          z: -1
+          visible: root.island && (vCenter.contentBottom - vCenter.contentTop) > 0
+          y: vCenter.contentTop - root.islandPadPx
+          height: (vCenter.contentBottom - vCenter.contentTop) + root.islandPadPx * 2
+          width: root.barSize
+          anchors.horizontalCenter: parent.horizontalCenter
+          radius: root.islandRadiusFor(width, height)
+          color: root.islandBackground
+          Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+          Behavior on y { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        }
 
         CenterGestureArea { anchors.fill: parent }
 
@@ -1601,6 +1767,7 @@ Item {
         }
 
         ModuleList {
+          id: unanchoredList
           visible: !centerRoot.hasAnchor
           entries: centerRoot.entries
           region: "center"
@@ -1608,6 +1775,7 @@ Item {
         }
 
         ModuleList {
+          id: beforeList
           visible: centerRoot.hasAnchor
           entries: root.entriesBefore(centerRoot.entries, root.centerAnchor)
           region: "center"
@@ -1624,6 +1792,7 @@ Item {
         }
 
         ModuleList {
+          id: afterList
           visible: centerRoot.hasAnchor
           entries: root.entriesAfter(centerRoot.entries, root.centerAnchor)
           region: "center"
@@ -1785,7 +1954,10 @@ Item {
     // plugin enabled/disabled, etc.). Reading the `widgets` property creates
     // the binding dependency — the wrapped function call alone wouldn't.
     readonly property var registryComponent: {
-      var w = root.barWidgetRegistry.widgets
+      // barWidgetRegistry is null until the host's configureBar() runs (see the
+      // note on the property declaration), so guard rather than throw.
+      var w = root.barWidgetRegistry ? root.barWidgetRegistry.widgets : null
+      if (!w) return null
       if (customType) return null
       var registryName = root.canonicalWidgetId(moduleName)
       return w[registryName] ? w[registryName].component : null
