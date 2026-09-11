@@ -50,7 +50,8 @@ Item {
     island: true,
     islandGap: 6,
     islandPadding: 10,
-    islandRadius: -1
+    islandRadius: -1,
+    locked: false
   })
   property var layoutConfig: fallbackBarConfig.layout
   property string centerAnchor: ""
@@ -63,6 +64,9 @@ Item {
   property int islandGap: 6
   property int islandPadding: 10
   property int islandRadius: -1
+  // Layout lock (leonardom011.bar fork): `bar.locked` blocks widget
+  // drag-reorder and dragging the bar to another edge; clicks still work.
+  property bool layoutLocked: false
   property bool centerSectionHovered: false
   // One bar surface exists per monitor and each reports into this count, so a
   // pointer crossing from one monitor's bar to another's stays counted however
@@ -609,7 +613,9 @@ Item {
     var config = Util.isPlainObject(barConfig) ? barConfig : fallbackBarConfig
 
     position = normalizePosition(config.position)
-    setRequestedTransparency(config.transparent === true)
+    // Transparency is pinned off (leonardom011.bar fork): the bar always paints
+    // the theme's bar.background, and `bar.transparent` in shell.json is ignored.
+    setRequestedTransparency(false)
     centerAnchor = Util.canonicalWidgetId(config.centerAnchor || "")
 
     // Island-bar options (leonardom011.bar fork). Any of these may be absent
@@ -618,6 +624,7 @@ Item {
     islandGap = Number.isFinite(config.islandGap) ? config.islandGap : 6
     islandPadding = Number.isFinite(config.islandPadding) ? config.islandPadding : 10
     islandRadius = Number.isFinite(config.islandRadius) ? config.islandRadius : -1
+    layoutLocked = config.locked === true
 
     // layoutEntries feeds plain JS arrays to the module Repeaters, and QML
     // cannot diff those: reassigning layoutConfig rebuilds every widget on
@@ -890,6 +897,23 @@ Item {
     }
   }
 
+  // leonardom011.bar fork: persisted as `bar.locked`. The write hot-reloads
+  // through barConfig -> applyBarConfig, which sets layoutLocked.
+  function toggleLayoutLock() {
+    var nextLocked = !(root.layoutLocked === true)
+    if (root.shell && typeof root.shell.mutateShellConfig === "function") {
+      root.shell.mutateShellConfig(function(config) {
+        if (!Util.isPlainObject(config.bar)) config.bar = {}
+        config.bar.locked = nextLocked
+      })
+    } else {
+      root.layoutLocked = nextLocked
+    }
+    root.run(nextLocked
+      ? "notify-send -a 'Omarchy Bar' 'Bar locked' 'Widgets can no longer be dragged'"
+      : "notify-send -a 'Omarchy Bar' 'Bar unlocked' 'Widgets can be dragged again'")
+  }
+
   function rawLayoutSection(config, region) {
     if (!Util.isPlainObject(config.bar)) config.bar = {}
     if (!Util.isPlainObject(config.bar.layout)) config.bar.layout = {}
@@ -933,6 +957,7 @@ Item {
   }
 
   function dropBarModule(source, toRegion, beforeName) {
+    if (root.layoutLocked) return false  // leonardom011.bar fork: layout lock
     if (!source || !source.region || !source.moduleName || !toRegion) return false
     if (source.region === toRegion && source.moduleName === beforeName) return false
     if (!root.shell || typeof root.shell.mutateShellConfig !== "function") return false
@@ -1224,6 +1249,11 @@ Item {
     // killing it here can swallow the result entirely.
     function syncHidden(): void {
       barHiddenProbe.running = true
+    }
+
+    // leonardom011.bar fork: `omarchy-shell omarchy.bar toggleLock`.
+    function toggleLock(): void {
+      root.toggleLayoutLock()
     }
   }
 
@@ -1817,7 +1847,8 @@ Item {
     pressAndHoldInterval: 200
 
     function startDrag(x, y) {
-      if (dragging) return
+      // leonardom011.bar fork: a locked bar can't be moved to another edge.
+      if (dragging || root.layoutLocked) return
       dragging = true
       root.beginBarMove(root.targetWindow(gestureArea))
       var scenePoint = gestureArea.mapToItem(null, x, y)
@@ -1879,7 +1910,8 @@ Item {
         return
       }
       if (mouse.button === Qt.LeftButton) {
-        root.toggleTransparency()
+        // leonardom011.bar fork: toggles the layout lock instead of transparency.
+        root.toggleLayoutLock()
         mouse.accepted = true
       }
     }
@@ -2078,7 +2110,8 @@ Item {
       property bool suppressClick: false
       property real pressedX: 0
       property real pressedY: 0
-      readonly property bool canReorder: root.shell && typeof root.shell.mutateShellConfig === "function"
+      // leonardom011.bar fork: layoutLocked disables reordering, not clicks.
+      readonly property bool canReorder: !root.layoutLocked && root.shell && typeof root.shell.mutateShellConfig === "function"
       readonly property real dragThreshold: Style.space(4)
 
       anchors.fill: parent
