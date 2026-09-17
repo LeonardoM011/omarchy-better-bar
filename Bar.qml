@@ -51,7 +51,7 @@ Item {
     islandGap: 6,
     islandPadding: 10,
     islandRadius: -1,
-    locked: false
+    locked: true
   })
   property var layoutConfig: fallbackBarConfig.layout
   property string centerAnchor: ""
@@ -66,7 +66,8 @@ Item {
   property int islandRadius: -1
   // Layout lock (leonardom011.bar fork): `bar.locked` blocks widget
   // drag-reorder and dragging the bar to another edge; clicks still work.
-  property bool layoutLocked: false
+  // Locked is the default: an absent `bar.locked` means locked.
+  property bool layoutLocked: true
   property bool centerSectionHovered: false
   // One bar surface exists per monitor and each reports into this count, so a
   // pointer crossing from one monitor's bar to another's stays counted however
@@ -624,7 +625,7 @@ Item {
     islandGap = Number.isFinite(config.islandGap) ? config.islandGap : 6
     islandPadding = Number.isFinite(config.islandPadding) ? config.islandPadding : 10
     islandRadius = Number.isFinite(config.islandRadius) ? config.islandRadius : -1
-    layoutLocked = config.locked === true
+    layoutLocked = config.locked !== undefined ? config.locked === true : true
 
     // layoutEntries feeds plain JS arrays to the module Repeaters, and QML
     // cannot diff those: reassigning layoutConfig rebuilds every widget on
@@ -1904,17 +1905,12 @@ Item {
       }
     }
 
-    onDoubleClicked: function(mouse) {
-      if (suppressClick) {
-        suppressClick = false
-        return
-      }
-      if (mouse.button === Qt.LeftButton) {
-        // leonardom011.bar fork: toggles the layout lock instead of transparency.
-        root.toggleLayoutLock()
-        mouse.accepted = true
-      }
-    }
+    // leonardom011.bar fork: upstream's onDoubleClicked toggled transparency and
+    // this fork briefly toggled the layout lock. Both are gone -- transparency is
+    // pinned off, and the lock is only reachable through SUPER + ALT + B / the
+    // `omarchy.bar toggleLock` IPC call, so a stray double-click can't unlock the
+    // bar. With nothing connected to doubleClicked, MouseArea emits clicked for
+    // the second release, which still clears suppressClick.
   }
 
   component ModuleList: Loader {

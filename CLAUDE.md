@@ -106,7 +106,7 @@ dependencies lives in `BarModel.js`.
   reserves the gap, and its window is transparent in island mode. Pills are
   `z: -1` siblings bound to live section geometry and animated.
 - `CenterModules` must keep `anchors.fill`, because `CenterGestureArea` is the
-  drag-to-move and double-click-transparency target. The center pill is sized from
+  drag-to-move target (double-click does nothing). The center pill is sized from
   computed `contentLeft/contentRight` (`contentTop/contentBottom` when vertical)
   instead.
 - `islandEdgeMargin = islandGapPx + islandPadPx`, because the pill is drawn
@@ -122,13 +122,15 @@ A second fork feature on top of the island patch (not part of `island.patch`).
 - `bar.locked` in shell.json (root property `layoutLocked`) blocks widget
   drag-reorder (`ModuleSlot`'s `canReorder`), dragging the bar to another edge
   (`CenterGestureArea.startDrag`), and `dropBarModule`. Clicks, tooltips, and
-  popouts are unaffected. Its default lives in the same three places as the
-  island keys.
+  popouts are unaffected. It defaults to **locked**: an absent `bar.locked`
+  means locked, in the same three places as the island keys.
 - `toggleLayoutLock()` writes `bar.locked` through `mutateShellConfig` and sends a
-  `notify-send`. It is triggered by a double-click on empty center-bar space
-  (formerly the transparency toggle), the IPC call
+  `notify-send`. It has exactly two triggers: the IPC call
   `omarchy-shell omarchy.bar toggleLock`, and `SUPER + ALT + B` in
-  `~/.config/hypr/bindings.lua`.
+  `~/.config/hypr/bindings.lua`, which calls that IPC. There is deliberately no
+  mouse trigger -- `CenterGestureArea` has no `onDoubleClicked` at all (upstream
+  toggled transparency there), so the bar can't be unlocked by a stray
+  double-click.
 - The lock does not cover the tray plugin (`io.github.tyrichards.tray`). Its
   drawer has its own drag MouseArea and writes shell.json itself. It also does not
   cover `omarchy bar move/position` or hand edits to shell.json.
