@@ -1,37 +1,8 @@
 diff --git a/Bar.qml b/Bar.qml
-index def615a..bda2ecd 100644
+index be9fece..d5191a9 100644
 --- a/Bar.qml
 +++ b/Bar.qml
-@@ -12,14 +12,25 @@ Item {
-   id: root
- 
-   // The omarchy-shell host injects omarchyPath from OMARCHY_PATH.
--  required property string omarchyPath
-+  //
-+  // NOT `required` in this fork. The stock bar is built by shell.qml's
-+  // `defaultBarComponent`, which sets these inline at construction, so
-+  // `required` is satisfiable there. A bar loaded as a *plugin* goes through
-+  // `pluginBarLoader` (`Loader { source: ... }` + `onLoaded: configureBar(item)`),
-+  // which assigns them only after construction — and QML requires `required`
-+  // properties to be set at construction time. Leaving them required makes the
-+  // component fail to instantiate with "Required property X was not initialized",
-+  // and shell.qml's fallback to the stock bar is itself broken
-+  // (`ReferenceError: errorString is not defined` at shell.qml:256 aborts the
-+  // handler before it sets failedBarId), so the result is *no bar at all*.
-+  property string omarchyPath: ""
-   // Injected by the host shell so bar slots can resolve enabled widgets.
--  required property var barWidgetRegistry
-+  property var barWidgetRegistry: null
-   // Injected by the host shell every time shell.json is reloaded. Holds the
-   // `bar:` subtree: position, centerAnchor, layout. The host owns file IO;
-   // the bar just renders whatever it's handed. The bar font follows the
-   // OS-level fontconfig monospace binding — it is not stored in shell.json.
--  required property var barConfig
-+  property var barConfig: null
-   // Injected by the host shell. Used for shell-wide actions such as opening
-   // settings and persisting inline widget state.
-   property var shell: null
-@@ -37,13 +48,23 @@ Item {
+@@ -46,13 +46,23 @@ Item {
      position: "top",
      transparent: false,
      centerAnchor: "omarchy.clock",
@@ -56,7 +27,7 @@ index def615a..bda2ecd 100644
    property bool centerSectionHovered: false
    // One bar surface exists per monitor and each reports into this count, so a
    // pointer crossing from one monitor's bar to another's stays counted however
-@@ -329,6 +350,23 @@ Item {
+@@ -555,6 +565,23 @@ Item {
    readonly property bool vertical: position === "left" || position === "right"
    readonly property int barSize: vertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
  
@@ -80,7 +51,7 @@ index def615a..bda2ecd 100644
    function normalizePosition(value) {
      return BarModel.normalizePosition(value)
    }
-@@ -359,6 +397,13 @@ Item {
+@@ -585,6 +612,13 @@ Item {
      setRequestedTransparency(config.transparent === true)
      centerAnchor = Util.canonicalWidgetId(config.centerAnchor || "")
  
@@ -94,7 +65,7 @@ index def615a..bda2ecd 100644
      // layoutEntries feeds plain JS arrays to the module Repeaters, and QML
      // cannot diff those: reassigning layoutConfig rebuilds every widget on
      // every monitor. When a shell.json write only changed inline widget
-@@ -1018,10 +1063,10 @@ Item {
+@@ -1248,10 +1282,10 @@ Item {
      }
  
      margins {
@@ -109,7 +80,7 @@ index def615a..bda2ecd 100644
      }
  
      anchors {
-@@ -1031,9 +1076,11 @@ Item {
+@@ -1261,9 +1295,11 @@ Item {
        right: root.position === "right" || !root.vertical
      }
  
@@ -124,7 +95,7 @@ index def615a..bda2ecd 100644
      surfaceFormat.opaque: false
      WlrLayershell.namespace: "omarchy-bar"
      WlrLayershell.layer: WlrLayer.Top
-@@ -1123,18 +1170,62 @@ Item {
+@@ -1353,18 +1389,62 @@ Item {
        Item {
          anchors.fill: parent
  
@@ -197,7 +168,7 @@ index def615a..bda2ecd 100644
          }
        }
      }
-@@ -1145,18 +1236,54 @@ Item {
+@@ -1375,18 +1455,54 @@ Item {
        Item {
          anchors.fill: parent
  
@@ -262,7 +233,7 @@ index def615a..bda2ecd 100644
          }
        }
      }
-@@ -1317,8 +1444,34 @@ Item {
+@@ -1547,8 +1663,34 @@ Item {
        id: horizontalCenterModules
  
        Item {
@@ -297,7 +268,7 @@ index def615a..bda2ecd 100644
          CenterGestureArea { anchors.fill: parent }
  
          HoverHandler {
-@@ -1326,6 +1479,7 @@ Item {
+@@ -1556,6 +1698,7 @@ Item {
          }
  
          ModuleList {
@@ -305,7 +276,7 @@ index def615a..bda2ecd 100644
            visible: !centerRoot.hasAnchor
            entries: centerRoot.entries
            region: "center"
-@@ -1333,6 +1487,7 @@ Item {
+@@ -1563,6 +1706,7 @@ Item {
          }
  
          ModuleList {
@@ -313,7 +284,7 @@ index def615a..bda2ecd 100644
            visible: centerRoot.hasAnchor
            entries: root.entriesBefore(centerRoot.entries, root.centerAnchor)
            region: "center"
-@@ -1349,6 +1504,7 @@ Item {
+@@ -1579,6 +1723,7 @@ Item {
          }
  
          ModuleList {
@@ -321,7 +292,7 @@ index def615a..bda2ecd 100644
            visible: centerRoot.hasAnchor
            entries: root.entriesAfter(centerRoot.entries, root.centerAnchor)
            region: "center"
-@@ -1362,8 +1518,29 @@ Item {
+@@ -1592,8 +1737,29 @@ Item {
        id: verticalCenterModules
  
        Item {
@@ -351,7 +322,7 @@ index def615a..bda2ecd 100644
          CenterGestureArea { anchors.fill: parent }
  
          HoverHandler {
-@@ -1371,6 +1548,7 @@ Item {
+@@ -1601,6 +1767,7 @@ Item {
          }
  
          ModuleList {
@@ -359,7 +330,7 @@ index def615a..bda2ecd 100644
            visible: !centerRoot.hasAnchor
            entries: centerRoot.entries
            region: "center"
-@@ -1378,6 +1556,7 @@ Item {
+@@ -1608,6 +1775,7 @@ Item {
          }
  
          ModuleList {
@@ -367,7 +338,7 @@ index def615a..bda2ecd 100644
            visible: centerRoot.hasAnchor
            entries: root.entriesBefore(centerRoot.entries, root.centerAnchor)
            region: "center"
-@@ -1394,6 +1573,7 @@ Item {
+@@ -1624,6 +1792,7 @@ Item {
          }
  
          ModuleList {
@@ -375,7 +346,7 @@ index def615a..bda2ecd 100644
            visible: centerRoot.hasAnchor
            entries: root.entriesAfter(centerRoot.entries, root.centerAnchor)
            region: "center"
-@@ -1552,7 +1732,10 @@ Item {
+@@ -1785,7 +1954,10 @@ Item {
      // plugin enabled/disabled, etc.). Reading the `widgets` property creates
      // the binding dependency — the wrapped function call alone wouldn't.
      readonly property var registryComponent: {

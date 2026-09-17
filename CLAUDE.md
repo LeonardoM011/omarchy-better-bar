@@ -14,11 +14,15 @@ into the omarchy source tree and are broken here. Its widget API section is stil
 accurate.
 
 The history is kept deliberately small: `ad64748` is the untouched
-`omarchy plugin clone` output (4.0.2-1), `562e8d1` is the island patch, and
-`island.patch` is exactly that commit's diff. Keep fork code separable from
-upstream code. Mark every edit site in `Bar.qml` with a `leonardom011.bar fork`
-comment (there are 14 today), and regenerate the patch after changing island code:
-`git diff ad64748 HEAD -- Bar.qml > island.patch`.
+`omarchy plugin clone` output (4.0.2-1), `0f071cf` is upstream 4.0.4-1 dropped on
+top of it, `b363bb2` is the island patch, and `island.patch` is exactly that one
+commit's diff — *not* the full fork delta. Keep fork code separable from upstream
+code. Mark every edit site in `Bar.qml` with a `leonardom011.bar fork` comment
+(there are 15 today), and regenerate the patch after changing island code:
+
+```bash
+git diff upstream b363bb2 -- Bar.qml > island.patch   # island commit vs its parent
+```
 
 ## Where it runs
 
@@ -70,8 +74,9 @@ dependencies lives in `BarModel.js`.
   `omarchyPath`, `shell`, `manifest`, `barWidgetRegistry`, `pluginRegistry`, and
   `barConfig` in the Loader's `onLoaded`, guarded by `"x" in target`. That means
   none of them may be `required`, everything reading them must tolerate null at
-  first, and an undeclared property is silently never injected. This fork does not
-  declare `pluginRegistry`.
+  first, and an undeclared property is silently never injected. Since the 4.0.4
+  rebase this fork does declare `pluginRegistry` (upstream's own declaration, kept
+  so clone construction stays atomic); nothing here reads it.
 - **Config flow:** `barConfig` → `applyBarConfig()` → `normalizeLayout()`
   (`Util.normalizeLayout` plus `BarModel.pinTrayToInner`). Then
   `BarModel.inlineSettingsDelta()` decides whether the change is settings-only
@@ -140,11 +145,34 @@ A second fork feature on top of the island patch (not part of `island.patch`).
   `~/.config/omarchy/shell.toml`. `toggleTransparency()` is kept for diff
   minimality, but nothing calls it.
 
+## The PluginBarApi sandbox is reverted
+
+A third fork feature, added with the 4.0.4 rebase (commit `0f1a565`).
+
+- 4.0.4 introduced `Ui/PluginBarApi.qml` (resolved from `qs.Ui` on the host — there
+  is no file to vendor here). `ModuleSlot.injectProps()` upstream hands first-party
+  widgets the real `root` and everyone else a facade.
+- On a **third-party bar this is strictly a downgrade.** `pluginBarApiFor()` only
+  takes the service-capable path when `root.shell` has `pluginShellForId`, and a
+  plugin bar's `shell` is a scoped `PluginShellApi` that does not. So this bar's
+  widgets would fall into the service-less `pluginShellForBarEntry` branch, while
+  the same widgets under the stock bar would not.
+- The facade also omits members the installed widgets use: `moduleSlots`
+  (`im0001gt.screens`, `omaplug`, mpris), `barHovered`/`barHidden`
+  (`im0001gt.screens`), and `barDragSource`, `clearBarDrag`, `dropMarkerRect`,
+  `pressModuleClickTarget`, `moduleClickTargetAt`, `customModuleType`,
+  `barWidgetRegistry` (`io.github.tyrichards.tray`).
+- So `injectProps()` is reverted to `target.bar = root` for every widget. The
+  `pluginBarApi*` functions, `firstParty`, `registryMetadata` and `pluginApiId`
+  are all left in place for diff minimality and are inert — `prunePluginBarApis`
+  just walks an empty map.
+- The tradeoff is deliberate: widgets on this bar are **not** sandboxed. If you
+  ever install a bar widget you do not trust, drop this revert first.
+
 ## Rebasing onto a newer upstream
 
-The fork is based on 4.0.2-1. The installed omarchy is 4.0.3-1, and upstream
-`Bar.qml` has changed since then (`manifest.json` always differs because of the
-fork's id). Check how far upstream has drifted:
+The fork is rebased onto 4.0.4-1, which is also what is installed. `manifest.json`
+always differs because of the fork's id. Check how far upstream has drifted:
 
 ```bash
 for f in $(git ls-tree -r --name-only ad64748); do git show ad64748:"$f" | cmp -s - /usr/share/omarchy/shell/plugins/bar/"$f" || echo "$f"; done
@@ -152,13 +180,16 @@ for f in $(git ls-tree -r --name-only ad64748); do git show ad64748:"$f" | cmp -
 
 **Don't follow the "Re-applying" steps in ISLAND-PATCH.md.** They predate moving
 the plugin into this repo behind a symlink (`plugins/leonardom011.bar` no longer
-exists), and `git apply --3way island.patch` on a fresh clone of 4.0.3 fails
-because the pre-image blobs are missing. Rebase inside this repo instead: create
-an `upstream` branch at `ad64748`, copy in the changed upstream files (never
-`manifest.json`), commit, and run `git rebase upstream` from `master`. Tested
-against 4.0.3, the only conflicts are the two property-declaration hunks
-(~lines 15–46). Upstream dropped `required` itself (it now defaults to
-`Quickshell.env("OMARCHY_PATH")`, `fallbackBarWidgetRegistry`, and `({})`, and
-adds `pluginRegistry`), so take upstream's side there and drop the fork's
-"NOT `required`" comment. 4.0.3 also fixed the `shell.qml` `errorString` fallback
-bug that ISLAND-PATCH.md describes.
+exists), and `git apply --3way island.patch` on a fresh clone fails because the
+pre-image blobs are missing. Rebase inside this repo instead: move the `upstream`
+branch to the current tip of upstream history, copy in the changed upstream files
+(never `manifest.json`), commit, and run `git rebase upstream` from `main`.
+
+Through 4.0.4 the only conflicts have been the two property-declaration hunks
+(~lines 15–46); take upstream's side in both. Tag a backup ref first — the rebase
+rewrites published history, so the follow-up push needs `--force-with-lease`.
+
+Both 4.0.3 and 4.0.4 landed in this rebase. 4.0.3 dropped `required` itself
+(defaults are now `Quickshell.env("OMARCHY_PATH")`, `fallbackBarWidgetRegistry`
+and `({})`), added `pluginRegistry`, and fixed the `shell.qml` `errorString`
+fallback bug ISLAND-PATCH.md describes.
