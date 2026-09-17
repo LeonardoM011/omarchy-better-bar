@@ -1,5 +1,8 @@
 # Omarchy bar
 
+<!-- leonardom011.bar fork -->
+![The leonardom011.bar island look: one pill-shaped slab per bar section](PREVIEW.png)
+
 This is the Quickshell implementation of the Omarchy status bar. It is
 shipped as a first-party plugin of [`omarchy-shell`](../../README.md), the
 long-running shell host. The bar is mounted at startup and lives inside
