@@ -2200,8 +2200,15 @@ Item {
     function injectProps() {
       var target = activeItem
       if (!target) return
-      if ("bar" in target) target.bar = firstParty
-        ? root : root.pluginBarApiFor(pluginApiId, moduleName, registered)
+      // leonardom011.bar fork: hand every widget the real bar root, reverting
+      // 4.0.4's PluginBarApi sandbox. Upstream only grants the service-capable
+      // facade to the trusted built-in bar (see `pluginBarApiFor`), so on a
+      // third-party bar like this one the sandbox is strictly a downgrade: it
+      // drops `moduleSlots`, `barHovered`/`barHidden` and the bar-drag
+      // internals that io.github.tyrichards.tray, im0001gt.screens and omaplug
+      // actually use. The `pluginBarApi*` machinery above is left intact for
+      // diff minimality; with nothing calling it, it stays inert.
+      if ("bar" in target) target.bar = root
       if ("moduleName" in target) target.moduleName = moduleName
       if ("settings" in target) target.settings = moduleSettings
     }
